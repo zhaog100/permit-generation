@@ -228,7 +228,13 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       // Estimate gas
       const gasEstimate = await estimateGas(provider, adminWallet.address, permit.beneficiary, permit.tokenAddress, beneficiaryAmount.toString());
 
-      const tokenDecimals = await erc20.decimals();
+      let tokenDecimals: number;
+      try {
+        tokenDecimals = await erc20.decimals();
+      } catch {
+        tokenDecimals = 18; // fallback for tokens without decimals()
+        context.logger.warn(`Token ${permit.tokenAddress} does not implement decimals(), using default 18`);
+      }
       context.logger.info(
         `Auto-transfer: ${ethers.utils.formatUnits(beneficiaryAmount, tokenDecimals)} tokens to ${permit.beneficiary}, ` +
           `operator fee: ${ethers.utils.formatUnits(operatorFee, tokenDecimals)}, ` +
