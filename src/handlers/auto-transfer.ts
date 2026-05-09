@@ -89,7 +89,18 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
 
   const operatorFeePercent = config.operatorFeePercent ?? 0;
   if (operatorFeePercent < 0 || operatorFeePercent > 100) {
-    throw new Error(`Invalid operatorFeePercent: ${operatorFeePercent}. Must be between 0 and 100.`);
+    // Return failed results instead of throwing, so already-generated permits aren't lost
+    return permits.map(permit => ({
+      beneficiary: permit.beneficiary,
+      tokenAddress: permit.tokenAddress,
+      amount: permit.amount?.toString() ?? "0",
+      txHash: null,
+      networkId: permit.networkId,
+      operatorFee: "0",
+      gasEstimate: { gasLimit: 0, gasPrice: "0", estimatedCost: "0", networkId: permit.networkId },
+      status: "failed" as const,
+      error: `Invalid operatorFeePercent: ${operatorFeePercent}. Must be between 0 and 100.`,
+    }));
   }
 
   // Get admin wallet — wrap setup in try/catch to return failed results instead of throwing
@@ -100,7 +111,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       return permits.map(permit => ({
         beneficiary: permit.beneficiary,
         tokenAddress: permit.tokenAddress,
-        amount: permit.amount.toString(),
+        amount: permit.amount?.toString() ?? "0",
         txHash: null,
         networkId: permit.networkId,
         operatorFee: "0",
@@ -114,7 +125,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
     return permits.map(permit => ({
       beneficiary: permit.beneficiary,
       tokenAddress: permit.tokenAddress,
-      amount: permit.amount.toString(),
+      amount: permit.amount?.toString() ?? "0",
       txHash: null,
       networkId: permit.networkId,
       operatorFee: "0",
@@ -133,7 +144,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
       return permits.map(permit => ({
         beneficiary: permit.beneficiary,
         tokenAddress: permit.tokenAddress,
-        amount: permit.amount.toString(),
+        amount: permit.amount?.toString() ?? "0",
         txHash: null,
         networkId: permit.networkId,
         operatorFee: "0",
@@ -148,7 +159,7 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
     return permits.map(permit => ({
       beneficiary: permit.beneficiary,
       tokenAddress: permit.tokenAddress,
-      amount: permit.amount.toString(),
+      amount: permit.amount?.toString() ?? "0",
       txHash: null,
       networkId: permit.networkId,
       operatorFee: "0",
@@ -251,8 +262,15 @@ export async function executeAutoTransfers(context: Context, permits: PermitRewa
 
       context.logger.info(`Transfer tx submitted: ${transferTx.hash}`);
 
-      // Wait for confirmation
-      await transferTx.wait();
+      // Wait for confirmation with timeout (60 seconds max)
+      const confirmation = await Promise.race([
+        transferTx.wait(),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Transaction confirmation timeout (60s)")), 60000))
+      ]);
+
+      if (!confirmation) {
+        throw new Error("Transaction confirmation timeout after 60 seconds");
+      }
 
       results.push({
         beneficiary: permit.beneficiary,
